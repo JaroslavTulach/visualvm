@@ -29,6 +29,7 @@ import com.sun.tools.visualvm.application.Application;
 import com.sun.tools.visualvm.application.ApplicationMethod;
 import com.sun.tools.visualvm.profiling.actions.ProfilerResultsAction;
 import com.sun.tools.visualvm.sampler.AbstractSamplerSupport;
+import com.sun.tools.visualvm.uisupport.TransparentToolBar;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -445,99 +446,4 @@ final class CPUView extends JPanel {
         add(cpuView, BorderLayout.CENTER);
         
     }
-/*<<<<<<< HEAD
-
-    private void fillInToolbar(final Application app, final TransparentToolBar toolBar) throws MissingResourceException {
-        List<? extends Action> actions = Utilities.actionsForPath("VisualVM/CPUView");
-        final InstanceContent ic = new InstanceContent();
-        ic.add(app);
-        AbstractLookup lookup = new AbstractLookup(ic);
-        class L implements TableModelListener, Runnable, ListSelectionListener {
-            ClientUtils.SourceCodeSelection sss;
-            ApplicationMethod am;
-
-            @Override
-            public void tableChanged(TableModelEvent e) {
-                JTable t = findJTable(CPUView.this);
-                if (t == null) {
-                    return;
-                }
-                int row = t.getSelectedRow();
-                if (sss != null) {
-                    ic.remove(sss);
-                }
-                if (am != null) {
-                    ic.remove(am);
-                }
-                if (row == -1) {
-                    return;
-                }
-                String classAndMethod = t.getModel().getValueAt(row, 0).toString();
-                int lastDot = classAndMethod.lastIndexOf('.');
-                String clazzName = classAndMethod.substring(0, lastDot);
-                int param = classAndMethod.lastIndexOf('(');
-                if (param == -1) {
-                    param = classAndMethod.length();
-                }
-                String methodName = classAndMethod.substring(lastDot + 1, param);
-                String signature = classAndMethod.substring(param);
-
-                ic.add(sss = new ClientUtils.SourceCodeSelection(clazzName, methodName, signature));
-                ic.add(am = new ApplicationMethod(app, clazzName, methodName, signature));
-            }
-
-            @Override
-            public void run() {
-                if (EventQueue.isDispatchThread()) {
-                    JTable t = findJTable(CPUView.this);
-                    if (t != null) {
-                        t.getSelectionModel().addListSelectionListener(this);
-                    } else {
-                        RequestProcessor.getDefault().schedule(this, 100, TimeUnit.MILLISECONDS);
-                    }
-                    tableChanged(null);
-                } else {
-                    EventQueue.invokeLater(this);
-                }
-            }
-
-            @Override
-            public void valueChanged(ListSelectionEvent e) {
-                tableChanged(null);
-            }
-        }
-        final L listener = new L();
-        listener.run();
-
-        for (Action a : actions) {
-            if (a instanceof ContextAwareAction) {
-                a = ((ContextAwareAction) a).createContextAwareInstance(lookup);
-            }
-            JButton b = new JButton();
-            Actions.connect(b, a);
-//            b.setText((String) a.getValue(Action.NAME));
-//            b.addActionListener(a);
-//            b.setOpaque(false);
-            toolBar.addItem(b);
-        }
-    }
-
-    private static JTable findJTable(Component c) {
-        if (c instanceof JTable) {
-            return (JTable) c;
-        }
-        if (c instanceof JComponent) {
-            Component[] arr = ((JComponent) c).getComponents();
-            for (Component component : arr) {
-                JTable t = findJTable(component);
-                if (t != null) {
-                    return t;
-                }
-            }
-        }
-        return null;
-    }
-=======
->>>>>>> github/master
-*/
 }

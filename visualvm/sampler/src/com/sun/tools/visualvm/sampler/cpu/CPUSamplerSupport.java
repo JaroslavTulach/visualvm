@@ -85,7 +85,6 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
     private Refresher threadCPURefresher;
     private ThreadsCPUView threadCPUView;
     private ThreadsCPU threadsCPU;
-    private final Application app;
 
     public CPUSamplerSupport(Application application, ThreadInfoProvider tip, ThreadsCPU tcpu, SnapshotDumper snapshotDumper, ThreadDumper threadDumper) {
         this.application = application;
