@@ -44,8 +44,8 @@ import java.util.TimerTask;
 import javax.swing.SwingUtilities;
 import org.netbeans.lib.profiler.common.ProfilingSettings;
 import org.netbeans.lib.profiler.common.ProfilingSettingsPresets;
-import org.netbeans.lib.profiler.common.filters.SimpleFilter;
-import org.netbeans.lib.profiler.global.InstrumentationFilter;
+import org.netbeans.lib.profiler.filters.GenericFilter;
+import org.netbeans.lib.profiler.filters.InstrumentationFilter;
 import org.netbeans.lib.profiler.results.cpu.CPUResultsSnapshot;
 import org.netbeans.lib.profiler.results.cpu.CPUResultsSnapshot.NoDataAvailableException;
 import org.netbeans.lib.profiler.results.cpu.StackTraceSnapshotBuilder;
@@ -59,6 +59,8 @@ import org.openide.util.NbBundle;
  * @author Tomas Hurka
  */
 public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
+    
+    private final Application application;
 
     private final ThreadInfoProvider threadInfoProvider;
     private final SnapshotDumper snapshotDumper;
@@ -85,8 +87,9 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
     private ThreadsCPU threadsCPU;
     private final Application app;
 
-    public CPUSamplerSupport(Application app, ThreadInfoProvider tip, ThreadsCPU tcpu, SnapshotDumper snapshotDumper, ThreadDumper threadDumper) {
-        this.app = app;
+    public CPUSamplerSupport(Application application, ThreadInfoProvider tip, ThreadsCPU tcpu, SnapshotDumper snapshotDumper, ThreadDumper threadDumper) {
+        this.application = application;
+        
         threadInfoProvider = tip;
         threadsCPU = tcpu;
         this.snapshotDumper = snapshotDumper;
@@ -134,12 +137,12 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
 
     public DataViewComponent.DetailsView[] getDetailsView() {
         if (detailsViews == null) {
-            cpuView = new CPUView(app, refresher, snapshotDumper, threadDumper);
+            cpuView = new CPUView(refresher, snapshotDumper, threadDumper, application);
             detailsViews = new DataViewComponent.DetailsView[threadsCPU != null ? 2:1];
             detailsViews[0] = new DataViewComponent.DetailsView(NbBundle.getMessage(
                 CPUSamplerSupport.class, "LBL_Cpu_samples"), null, 10, cpuView, null); // NOI18N
             if (threadsCPU != null) {
-                threadCPUView = new ThreadsCPUView(threadCPURefresher);
+                threadCPUView = new ThreadsCPUView(threadCPURefresher, threadDumper);
                 detailsViews[1] = new DataViewComponent.DetailsView(NbBundle.getMessage(
                 CPUSamplerSupport.class, "LBL_ThreadAlloc"), null, 20, threadCPUView, null); // NOI18N
                 
@@ -153,17 +156,20 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
     }
 
     public boolean startSampling(ProfilingSettings settings, int samplingRate, int refreshRate) {
-        InstrumentationFilter filter = new InstrumentationFilter();
-        SimpleFilter sf = (SimpleFilter)settings.getSelectedInstrumentationFilter();
-        filter.setFilterStrings(sf.getFilterValue());
-        filter.setFilterType(convertFilterType(sf.getFilterType()));
+        GenericFilter sf = settings.getInstrumentationFilter();
+        InstrumentationFilter filter = new InstrumentationFilter(sf);
         builder = snapshotDumper.getNewBuilder(filter);
-                
+        
         refresher.setRefreshRate(refreshRate);
 
+        final StackTraceSnapshotBuilder _builder = builder;
         SwingUtilities.invokeLater(new Runnable() {
             public void run() {
-                cpuView.setResultsPanel(new SampledLivePanel(builder));
+                if (cpuView != null) {
+                    cpuView.setBuilder(_builder);
+                    cpuView.starting();
+                }
+                if (threadCPUView != null) threadCPUView.starting();
             }
         });
 
@@ -184,6 +190,13 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
     }
 
     public synchronized void stopSampling() {
+        SwingUtilities.invokeLater(new Runnable() {
+            public void run() {
+                if (cpuView != null) cpuView.stopping();
+                if (threadCPUView != null) threadCPUView.stopping();
+            }
+        });
+        
         if (samplerTask != null) {
             samplerTask.cancel();
             samplerTask = null;
@@ -195,12 +208,18 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
     }
 
     public synchronized void terminate() {
+        SwingUtilities.invokeLater(new Runnable() {
+            public void run() {
+                if (cpuView != null) cpuView.terminated();
+                if (threadCPUView != null) threadCPUView.terminated();
+            }
+        });
+        
         if (timer != null) {
             timer.cancel();
             timer = null;
         }
-        if (cpuView != null) cpuView.terminate();
-        if (threadCPUView != null) threadCPUView.terminate();
+        
         builder = null;  // release data
     }
 
@@ -246,20 +265,6 @@ public abstract class CPUSamplerSupport extends AbstractSamplerSupport {
                 }
             });
     }
-
-    private int convertFilterType(int simpleFilterrType) {
-        if (simpleFilterrType == SimpleFilter.SIMPLE_FILTER_NONE) {
-            return InstrumentationFilter.INSTR_FILTER_NONE;
-        }
-        if (simpleFilterrType == SimpleFilter.SIMPLE_FILTER_EXCLUSIVE) {
-            return InstrumentationFilter.INSTR_FILTER_EXCLUSIVE;
-        }
-        if (simpleFilterrType == SimpleFilter.SIMPLE_FILTER_INCLUSIVE) {
-            return InstrumentationFilter.INSTR_FILTER_INCLUSIVE;
-        }
-        throw new IllegalArgumentException("type "+simpleFilterrType); // NOI18N
-    }
-
 
     private class SamplerTask extends TimerTask {
 

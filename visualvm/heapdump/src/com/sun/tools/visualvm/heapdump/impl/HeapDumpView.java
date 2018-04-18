@@ -33,18 +33,16 @@ import com.sun.tools.visualvm.heapdump.HeapDump;
 import com.sun.tools.visualvm.core.ui.DataSourceView;
 import com.sun.tools.visualvm.core.ui.components.DataViewComponent;
 import com.sun.tools.visualvm.core.ui.components.ScrollableContainer;
+import com.sun.tools.visualvm.heapviewer.HeapViewer;
 import java.awt.BorderLayout;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.logging.Logger;
-import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JToolBar;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import org.netbeans.modules.profiler.heapwalk.HeapWalker;
 import org.openide.util.NbBundle;
 import org.openide.util.RequestProcessor;
 
@@ -106,8 +104,9 @@ class HeapDumpView extends DataSourceView {
         private JPanel contentsPanel;
         
         public MasterViewSupport(HeapDump heapDump) {
-            initComponents();
-            loadHeap(heapDump.getFile());
+            File file = heapDump.getFile();
+            initComponents(file != null);
+            if (file != null) loadHeap(file);
         }
         
         
@@ -116,10 +115,12 @@ class HeapDumpView extends DataSourceView {
         }
         
         
-        private void initComponents() {
+        private void initComponents(boolean hasDump) {
             setLayout(new BorderLayout());
             
-            progressLabel = new JLabel(NbBundle.getMessage(HeapDumpView.class, "LBL_Loading_Heap_Dump"), SwingConstants.CENTER);    // NOI18N
+            String label = hasDump ? NbBundle.getMessage(HeapDumpView.class, "LBL_Loading_Heap_Dump") :    // NOI18N
+                                     NbBundle.getMessage(HeapDumpView.class, "LBL_Loading_Heap_Dump_failed");    // NOI18N
+            progressLabel = new JLabel(label, SwingConstants.CENTER);
         
             contentsPanel = new JPanel(new BorderLayout());
             contentsPanel.add(progressLabel, BorderLayout.CENTER);
@@ -133,21 +134,10 @@ class HeapDumpView extends DataSourceView {
           RequestProcessor.getDefault().post(new Runnable() {
             public void run() {
               try {
-                final HeapWalker hw = new HeapWalker(file);
+                final HeapViewer heapViewer = new HeapViewer(file);
                 SwingUtilities.invokeLater(new Runnable() { public void run() {
                     contentsPanel.remove(progressLabel);
-                    JComponent hwView = hw.getTopComponent();
-                    try {
-                        JComponent fragmentWalker = (JComponent)hwView.getComponent(0);
-                        fragmentWalker.setOpaque(false);
-                        JToolBar toolBar = (JToolBar)fragmentWalker.getComponent(0);
-                        JComponent controllerPanel = (JComponent)fragmentWalker.getComponent(1);
-                        toolBar.setOpaque(false);
-                        ((JComponent)toolBar.getComponent(0)).setOpaque(false);
-                        ((JComponent)toolBar.getComponent(1)).setOpaque(false);
-                        controllerPanel.setOpaque(false);
-                    } catch (Exception e) {}
-                    contentsPanel.add(hwView, BorderLayout.CENTER);
+                    contentsPanel.add(heapViewer.getComponent(), BorderLayout.CENTER);
                     contentsPanel.revalidate();
                     contentsPanel.repaint();
                 } });

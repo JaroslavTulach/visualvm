@@ -36,6 +36,7 @@ import com.sun.tools.visualvm.core.datasupport.Stateful;
 import com.sun.tools.visualvm.core.ui.DataSourceView;
 import com.sun.tools.visualvm.core.ui.DataSourceWindowManager;
 import com.sun.tools.visualvm.host.Host;
+import com.sun.tools.visualvm.profiling.presets.ProfilerPreset;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,7 +47,6 @@ import org.netbeans.lib.profiler.common.ProfilingSettings;
 import org.netbeans.lib.profiler.common.SessionSettings;
 import org.netbeans.lib.profiler.global.Platform;
 import org.netbeans.modules.profiler.NetBeansProfiler;
-import org.netbeans.modules.profiler.ProfilerControlPanel2;
 import org.netbeans.modules.profiler.api.ProfilerIDESettings;
 import org.openide.DialogDisplayer;
 import org.openide.NotifyDescriptor;
@@ -195,52 +195,49 @@ public final class ProfilerSupport {
     }
     
     public void profileProcessStartup(final String java, final int architecture, final int port,
-                                      final CPUSettingsSupport cpuSettings,
-                                      final MemorySettingsSupport memorySettings,
-                                      final boolean isCPUProfiling) {
+                                      ProfilerSettingsSupport settings, final ProfilerPreset preset) {
         
         if (!CalibrationSupport.checkCalibration(java, architecture, null, null)) return;
         
+        final ProfilingSettings pSettings = settings.getSettings();
+        
         SwingUtilities.invokeLater(new Runnable() {
+            public void run() {                
+        // Perform the actual attach
+        RequestProcessor.getDefault().post(new Runnable() {
             public void run() {
-                // prevent deadlock, similar to issue #570
-                ProfilerControlPanel2.getDefault();
-                
-                // Perform the actual attach
-                RequestProcessor.getDefault().post(new Runnable() {
-                    public void run() {
-                        if (!checkStartedApp(port)) return;
-                        
-                        final RequestProcessor processor = new RequestProcessor("Startup Profiler @ " + port); // NOI18N
-                        Host.LOCALHOST.getRepository().addDataChangeListener(
-                            new DataChangeListener<Application>() {
-                                public void dataChanged(final DataChangeEvent<Application> event) {
-                                    final DataChangeListener listener = this;
-                                    processor.post(new Runnable() {
-                                        public void run() {
-                                            if (!event.getAdded().equals(event.getCurrent())) // filter-out initial sync event
-                                                for (Application a : event.getAdded()) {
-                                                    if (isProfiledApplication(a, port)) {
-                                                        Host.LOCALHOST.getRepository().removeDataChangeListener(listener);
+                if (!checkStartedApp(port)) return;
 
-                                                        setProfiledApplication(a);
-                                                        selectProfilerView(a, cpuSettings, memorySettings);
+                final RequestProcessor processor = new RequestProcessor("Startup Profiler @ " + port); // NOI18N
+                Host.LOCALHOST.getRepository().addDataChangeListener(
+                    new DataChangeListener<Application>() {
+                        public void dataChanged(final DataChangeEvent<Application> event) {
+                            final DataChangeListener listener = this;
+                            processor.post(new Runnable() {
+                                public void run() {
+                                    if (!event.getAdded().equals(event.getCurrent())) // filter-out initial sync event
+                                        for (Application a : event.getAdded()) {
+                                            if (isProfiledApplication(a, port)) {
+                                                Host.LOCALHOST.getRepository().removeDataChangeListener(listener);
 
-                                                        break;
-                                                    }
-                                                }
+                                                setProfiledApplication(a);
+                                                selectProfilerView(a, preset, pSettings);
+
+                                                break;
+                                            }
                                         }
-                                    });
                                 }
-                            }, Application.class);
+                            });
+                        }
+                    }, Application.class);
 
-                        ProfilingSettings ps = createProfilingSettings(cpuSettings, memorySettings, isCPUProfiling);
-                        SessionSettings ss = createSessionSettings(java, architecture, port);
-                        NetBeansProfiler.getDefaultNB().connectToStartedApp(ps, ss);
-                        resetTerminateDialogs();
-                    }
-                });
+                ProfilingSettings ps = pSettings;
+                SessionSettings ss = createSessionSettings(java, architecture, port);
+                NetBeansProfiler.getDefaultNB().connectToStartedApp(ps, ss);
+                resetTerminateDialogs();
             }
+        });
+        }
         });
     }
     
@@ -263,12 +260,6 @@ public final class ProfilerSupport {
         dnsaKey = "NetBeansProfiler.handleShutdown"; // NOI18N
         String dnsa = ProfilerIDESettings.getInstance().getDoNotShowAgain(dnsaKey);
         if ("NO_OPTION".equals(dnsa)) ProfilerIDESettings.getInstance().setDoNotShowAgain(dnsaKey, null); // NOI18N        }
-    }
-    
-    private static ProfilingSettings createProfilingSettings(CPUSettingsSupport cpuSettings,
-            MemorySettingsSupport memorySettings, boolean isCPUProfiling) {
-        
-        return isCPUProfiling ? cpuSettings.getSettings() : memorySettings.getSettings();
     }
     
     private static SessionSettings createSessionSettings(String java, int architecture, int port) {
@@ -310,6 +301,10 @@ public final class ProfilerSupport {
         // User explicitly requests to profile any VM
         if (FORCE_PROFILING_SUPPORTED) return true;
         
+//////        //TODO
+//////        // temporary disabled until profiling is rewritten to NB 90
+//////        return false;
+
         // Profiled application needs to be running JDK 6.0 or 7.0 or 8.0 or 9.0
         if (!jvm.is16() && !jvm.is17() && !jvm.is18() && !jvm.is19()) return false;
         
@@ -320,8 +315,8 @@ public final class ProfilerSupport {
         // Oracle Co. or Apple Inc. or Hewlett-Packard Co. or 
         // Azul Systems, Inc. or SAP AG
         return vmName != null && (vmName.startsWith(HOTSPOT_VM_NAME_PREFIX) || vmName.startsWith(OPENJDK_VM_NAME_PREFIX)
-                                  || vmName.startsWith(SAPJDK_VM_NAME_PREFIX)) && 
-               vmVendor != null && (vmVendor.startsWith(ORACLE_VM_VENDOR_PREFIX) || vmVendor.startsWith(SUN_VM_VENDOR_PREFIX) 
+                                  || vmName.startsWith(SAPJDK_VM_NAME_PREFIX)) &&
+               vmVendor != null && (vmVendor.startsWith(ORACLE_VM_VENDOR_PREFIX) || vmVendor.startsWith(SUN_VM_VENDOR_PREFIX)
                                  || vmVendor.startsWith(APPLE_VM_VENDOR_PREFIX) || vmVendor.startsWith(HP_VM_VENDOR_PREFIX)
                                  || vmVendor.startsWith(AZUL_VM_VENDOR_PREFIX) || vmVendor.startsWith(SAP_VM_VENDOR_PREFIX));
     }
@@ -432,13 +427,16 @@ public final class ProfilerSupport {
         selectProfilerView(application, null, null);
     }
     
-    private void selectProfilerView(Application application, final CPUSettingsSupport cpu, final MemorySettingsSupport memory) {
+    private void selectProfilerView(Application application, final ProfilerPreset preset, final ProfilingSettings settings) {
         if (application == null) return;
+        
         final DataSourceView activeView = profilerViewProvider.view(application);
         if (activeView == null) return;
+        
         SwingUtilities.invokeLater(new Runnable() {
             public void run() {
-                if (cpu != null || memory != null) ((ApplicationProfilerView)activeView).copySettings(cpu, memory);
+                if (preset != null && settings != null)
+                    ((ApplicationProfilerView)activeView).selectPreset(preset, settings);
                 DataSourceWindowManager.sharedInstance().selectView(activeView);
             }
         });
@@ -446,11 +444,17 @@ public final class ProfilerSupport {
     
     
     private ProfilerSupport() {
-        profilerViewProvider = new ApplicationProfilerViewProvider();
-        profilerViewProvider.initialize();
+        isInitialized = NetBeansProfiler.isInitialized();
+        
+        if (isInitialized) {
+            profilerViewProvider = new ApplicationProfilerViewProvider();
+            profilerViewProvider.initialize();
 
-        ProfilerIDESettings.getInstance().setAutoOpenSnapshot(false);
-        ProfilerIDESettings.getInstance().setAutoSaveSnapshot(true);
+            ProfilerIDESettings.getInstance().setAutoOpenSnapshot(false);
+            ProfilerIDESettings.getInstance().setAutoSaveSnapshot(true);
+        } else {
+            profilerViewProvider = null;
+        }
     }
 
 }

@@ -24,7 +24,10 @@
  */
 package com.sun.tools.visualvm.profiling.snapshot;
 
+import com.sun.tools.visualvm.application.Application;
 import com.sun.tools.visualvm.core.datasource.DataSource;
+import com.sun.tools.visualvm.profiling.actions.ProfilerResultsAction;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Image;
 import java.io.File;
@@ -32,9 +35,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.swing.BorderFactory;
 import javax.swing.JComponent;
-import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import org.netbeans.lib.profiler.global.CommonConstants;
 import org.netbeans.modules.profiler.LoadedSnapshot;
@@ -42,7 +43,6 @@ import org.netbeans.modules.profiler.ResultsManager;
 import org.netbeans.modules.profiler.SnapshotResultsWindow;
 import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
-import org.openide.util.Exceptions;
 import org.openide.util.ImageUtilities;
 import org.openide.windows.TopComponent;
 
@@ -83,18 +83,23 @@ final class ProfilerSnapshotNPS extends ProfilerSnapshot {
     protected Image resolveIcon() {
         try {
             int snapshotType = getLoadedSnapshot().getType();
-            if (snapshotType == LoadedSnapshot.SNAPSHOT_TYPE_CPU) {
-                return ImageUtilities.mergeImages(CPU_ICON, NODE_BADGE, 0, 0);
-            } else if (snapshotType == LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_LIVENESS
-                    || snapshotType == LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_ALLOCATIONS
-                    || snapshotType == LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_SAMPLED) {
-                return ImageUtilities.mergeImages(MEMORY_ICON, NODE_BADGE, 0, 0);
-            } else {
-                return null;
+            switch (snapshotType) {
+                case LoadedSnapshot.SNAPSHOT_TYPE_CPU:
+                    return ImageUtilities.mergeImages(CPU_ICON, NODE_BADGE, 0, 0);
+                case LoadedSnapshot.SNAPSHOT_TYPE_CPU_JDBC:
+                    return ImageUtilities.mergeImages(JDBC_ICON, NODE_BADGE, 0, 0);
+                case LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_LIVENESS:
+                case LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_ALLOCATIONS:
+                case LoadedSnapshot.SNAPSHOT_TYPE_MEMORY_SAMPLED:
+                    return ImageUtilities.mergeImages(MEMORY_ICON, NODE_BADGE, 0, 0);
+                default:
+                    // Fallback icon, cannot return null - throws NPE in DataSourceView
+                    return ImageUtilities.mergeImages(SNAPSHOT_ICON, NODE_BADGE, 0, 0);
             }
         } catch (Exception e) {
             LOGGER.log(Level.FINE, "Failed to determine profiler snapshot type", e);  // NOI18N
-            return null;
+            // Fallback icon, cannot return null - throws NPE in DataSourceView
+            return ImageUtilities.mergeImages(SNAPSHOT_ICON, NODE_BADGE, 0, 0);
         }
     }
 
@@ -102,16 +107,13 @@ final class ProfilerSnapshotNPS extends ProfilerSnapshot {
     JComponent getUIComponent() {
         if (srw == null) {
             srw = SnapshotResultsWindow.get(loadedSnapshot, CommonConstants.SORTING_COLUMN_DEFAULT, false);
-            try {
-                JComponent cpuResPanel = (JComponent) srw.getComponent(0);
-                cpuResPanel.setOpaque(false);
-                JTabbedPane tabbedPane = (JTabbedPane) cpuResPanel.getComponent(0);
-                JComponent infoPanel = (JComponent) tabbedPane.getComponentAt(tabbedPane.getTabCount() - 1);
-                infoPanel.setBorder(BorderFactory.createEmptyBorder());
-            } catch (Exception e) {
-                Exceptions.printStackTrace(e);
-            }
             srw.setPreferredSize(new Dimension(1, 1));
+            
+            DataSource master = getMaster();
+            if (master instanceof Application && srw.getComponentCount() > 0) {
+                Component c = srw.getComponent(0);
+                if (c instanceof JComponent) ((JComponent)c).putClientProperty(ProfilerResultsAction.PROP_APPLICATION, master);
+            }
         }
         return srw;
     }

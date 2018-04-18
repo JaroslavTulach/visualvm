@@ -78,6 +78,9 @@ public final class ThreadInfoProvider {
             LOGGER.log(Level.INFO, "JvmMXBeansFactory.getJvmMXBeans(jmxModel) returns null for " + application); // NOI18N
             return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable_threads"); // NOI18N
         }
+//////        //TODO
+//////        // temporary disabled until profiling is rewritten to NB 90
+//////        return NbBundle.getMessage(ThreadInfoProvider.class, "MSG_unavailable_threads"); // NOI18N
         threadBean = mxbeans.getThreadMXBean();
         if (threadBean == null) {
             LOGGER.log(Level.INFO, "mxbeans.getThreadMXBean() returns null for " + application); // NOI18N

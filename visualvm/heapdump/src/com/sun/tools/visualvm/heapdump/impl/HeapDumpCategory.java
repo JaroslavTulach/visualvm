@@ -41,7 +41,8 @@ import org.openide.util.NbBundle;
  * @author Tomas Hurka
  */
 public class HeapDumpCategory extends SnapshotCategory<HeapDump> {
-    private static final String HPROF_HEADER = "JAVA PROFILE 1.0";
+    
+    private static final String HPROF_HEADER = "JAVA PROFILE 1.0";  // NOI18N
     private static final long MIN_HPROF_SIZE = 1024*1024L;
     private static final String NAME = NbBundle.getMessage(HeapDumpCategory.class, "LBL_Heap_Dumps");   // NOI18N
     private static final String PREFIX = "heapdump";    // NOI18N
@@ -56,7 +57,7 @@ public class HeapDumpCategory extends SnapshotCategory<HeapDump> {
     }
     
     public void openSnapshot(File file) {
-        DataSourceWindowManager.sharedInstance().openDataSource(new HeapDumpImpl(file, null));
+        DataSourceWindowManager.sharedInstance().openDataSource(new HeapDumpImpl(file, null)); // TODO: instance should be created by HeapDumpProvider!
     }
 
     protected boolean isSnapshot(File file) {

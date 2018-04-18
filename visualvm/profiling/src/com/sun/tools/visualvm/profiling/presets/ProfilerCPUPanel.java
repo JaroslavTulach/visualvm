@@ -36,7 +36,6 @@ import java.awt.event.ActionEvent;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
-import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
@@ -47,10 +46,10 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import org.netbeans.lib.profiler.client.ClientUtils;
 import org.netbeans.lib.profiler.common.ProfilingSettings;
-import org.netbeans.lib.profiler.common.ProfilingSettingsPresets;
-import org.netbeans.lib.profiler.common.filters.FilterUtils;
-import org.netbeans.lib.profiler.common.filters.SimpleFilter;
+import org.netbeans.lib.profiler.filters.GenericFilter;
+import org.netbeans.lib.profiler.filters.JavaTypeFilter;
 import org.netbeans.lib.profiler.global.CommonConstants;
+import org.netbeans.modules.profiler.api.ProfilerIDESettings;
 import org.openide.awt.Mnemonics;
 import org.openide.util.NbBundle;
 
@@ -62,7 +61,7 @@ public abstract class ProfilerCPUPanel extends JPanel {
     
     private JLabel rootClassesLabel;
     private TextAreaComponent rootsArea;
-    private JCheckBox runnablesCheckBox;
+//    private JCheckBox runnablesCheckBox;
     private JRadioButton inclFilterRadioButton;
     private JRadioButton exclFilterRadioButton;
     private TextAreaComponent filtersArea;
@@ -84,24 +83,31 @@ public abstract class ProfilerCPUPanel extends JPanel {
     
     
     public ProfilingSettings getSettings() {
-        ProfilingSettings settings = ProfilingSettingsPresets.createCPUPreset(ProfilingSettings.PROFILE_CPU_ENTIRE);
-        settings.setInstrScheme(CommonConstants.INSTRSCHEME_LAZY);
+        ProfilingSettings settings = ProfilerIDESettings.getInstance().createDefaultProfilingSettings();
+        settings.setProfilingType(ProfilingSettings.PROFILE_CPU_PART);
+        settings.setCPUProfilingType(settings.getSamplingInterval() <= 0 ?
+                                     CommonConstants.CPU_INSTR_FULL :
+                                     CommonConstants.CPU_INSTR_SAMPLED);
         
-        String instrFilterString = getFilterValue();
-        SimpleFilter instrFilter = (instrFilterString.isEmpty() || "*".equals(instrFilterString)) ? SimpleFilter.NO_FILTER : // NOI18N
-            new SimpleFilter(instrFilterString, inclFilterRadioButton.isSelected() ?
-            SimpleFilter.SIMPLE_FILTER_INCLUSIVE : SimpleFilter.SIMPLE_FILTER_EXCLUSIVE, instrFilterString);
-        settings.setSelectedInstrumentationFilter(instrFilter);
-        
-        String[] rootValues = getRootValue().split(","); // NOI18N
-        ClientUtils.SourceCodeSelection[] roots = (rootValues.length == 1 && rootValues[0].isEmpty()) ?
+        String[] rootsValues = GenericFilter.values(PresetsUtils.normalizeValue(getRootsValue()));
+        ClientUtils.SourceCodeSelection[] roots = (rootsValues.length == 1 && rootsValues[0].isEmpty()) ?
             new ClientUtils.SourceCodeSelection[0] :
-            new ClientUtils.SourceCodeSelection[rootValues.length];
+            new ClientUtils.SourceCodeSelection[rootsValues.length];
         for (int i = 0; i < roots.length; i++)
-            roots[i] = new ClientUtils.SourceCodeSelection(rootValues[i], "*", null); // NOI18N
-        settings.setInstrumentationRootMethods(roots);
+            roots[i] = new ClientUtils.SourceCodeSelection(rootsValues[i], "*", null); // NOI18N
+        settings.addRootMethods(roots);
         
-        settings.setInstrumentSpawnedThreads(runnablesCheckBox.isSelected());
+        String filter = getFilterValue();
+        if (filter.isEmpty() || "*".equals(filter) || "**".equals(filter)) { // NOI18N
+            settings.setInstrumentationFilter(new JavaTypeFilter());
+        } else {
+            int filterType = inclFilterRadioButton.isSelected() ?
+                             JavaTypeFilter.TYPE_INCLUSIVE : JavaTypeFilter.TYPE_EXCLUSIVE;
+            String filterValue = PresetsUtils.normalizeValue(filter);
+            settings.setInstrumentationFilter(new JavaTypeFilter(filterValue, filterType));
+        }
+        
+        settings.setStackDepthLimit(Integer.MAX_VALUE);
         
         return settings;
     }
@@ -109,25 +115,33 @@ public abstract class ProfilerCPUPanel extends JPanel {
     
     public boolean settingsValid() { return rootsValid && filtersValid; }
     
+    public void highlighInvalid() {
+        if (getRootsValue().isEmpty()) rootsArea.getTextArea().setText(ProfilerPresets.DEFINE_CLASSES);
+    }
+    
     public void loadFromPreset(ProfilerPreset preset) {
         if (preset == null) return;
 
         internalChange = true;
         rootsArea.getTextArea().setText(preset.getRootsP());
-        runnablesCheckBox.setSelected(preset.getRunnablesP());
+//        runnablesCheckBox.setSelected(preset.getRunnablesP());
         inclFilterRadioButton.setSelected(!preset.getFilterModeP());
         exclFilterRadioButton.setSelected(preset.getFilterModeP());
         filtersArea.getTextArea().setText(preset.getFilterP());
+        highlighInvalid();
         internalChange = false;
+        
+        checkRootValidity();
+        checkFilterValidity();
     }
     
     public void saveToPreset(ProfilerPreset preset) {
         if (preset == null) return;
         
-        preset.setRootsP(rootsArea.getTextArea().getText());
-        preset.setRunnablesP(runnablesCheckBox.isSelected());
+        preset.setRootsP(getRootsValue());
+//        preset.setRunnablesP(runnablesCheckBox.isSelected());
         preset.setFilterModeP(exclFilterRadioButton.isSelected());
-        preset.setFilterP(filtersArea.getTextArea().getText());
+        preset.setFilterP(getFilterValue());
     }
     
     public abstract void settingsChanged();
@@ -146,39 +160,12 @@ public abstract class ProfilerCPUPanel extends JPanel {
     }
     
     public boolean isRootValueValid() {
-        String[] rootParts = FilterUtils.getSeparateFilters(getRootValue());
-
-        for (int i = 0; i < rootParts.length; i++)
-            if (!FilterUtils.isValidProfilerFilter(rootParts[i]))
-                if (rootParts[i].endsWith("**")) { // NOI18N
-                    if (!FilterUtils.isValidProfilerFilter(rootParts[i].substring(0, rootParts[i].length() - 1))) return false;
-                } else {
-                    return false;
-                }
-
-        return true;
+        String rootsValue = PresetsUtils.normalizeValue(getRootsValue());
+        return PresetsUtils.isValidJavaValue(rootsValue, false, false);
     }
     
-    private String getRootValue() {
-        StringBuilder convertedValue = new StringBuilder();
-
-        String[] rootValues = getRootsValues();
-
-        for (int i = 0; i < rootValues.length; i++) {
-            String filterValue = rootValues[i].trim();
-
-            if ((i != (rootValues.length - 1)) && !filterValue.endsWith(",")) { // NOI18N
-                filterValue = filterValue + ","; // NOI18N
-            }
-
-            convertedValue.append(filterValue);
-        }
-
-        return convertedValue.toString();
-    }
-    
-    private String[] getRootsValues() {
-        return rootsArea.getTextArea().getText().split("\\n"); // NOI18N
+    private String getRootsValue() {
+        return rootsArea.getTextArea().getText().trim();
     }
     
     private void checkFilterValidity() {
@@ -189,34 +176,12 @@ public abstract class ProfilerCPUPanel extends JPanel {
     }
     
     public boolean isFilterValueValid() {
-        String[] filterParts = FilterUtils.getSeparateFilters(getFilterValue());
-
-        for (int i = 0; i < filterParts.length; i++)
-            if (!FilterUtils.isValidProfilerFilter(filterParts[i])) return false;
-
-        return true;
+        String filterValue = PresetsUtils.normalizeValue(getFilterValue());
+        return PresetsUtils.isValidJavaValue(filterValue, true, false);
     }
-    
+
     private String getFilterValue() {
-        StringBuilder convertedValue = new StringBuilder();
-
-        String[] filterValues = getFilterValues();
-
-        for (int i = 0; i < filterValues.length; i++) {
-            String filterValue = filterValues[i].trim();
-
-            if ((i != (filterValues.length - 1)) && !filterValue.endsWith(",")) { // NOI18N
-                filterValue = filterValue + ", "; // NOI18N
-            }
-
-            convertedValue.append(filterValue);
-        }
-
-        return convertedValue.toString();
-    }
-
-    private String[] getFilterValues() {
-        return filtersArea.getTextArea().getText().split("\\n"); // NOI18N
+        return filtersArea.getTextArea().getText().trim();
     }
     
     
@@ -233,8 +198,7 @@ public abstract class ProfilerCPUPanel extends JPanel {
         GridBagConstraints constraints;
         
         rootClassesLabel = new JLabel();
-        setText(rootClassesLabel, NbBundle.getMessage(ProfilerCPUSettings.class,
-                "LBL_Root_Classes"), mnemonics);
+        setText(rootClassesLabel, NbBundle.getMessage(ProfilerCPUSettings.class, "LBL_Root_Classes"), mnemonics); // NOI18N
         Dimension d = rootClassesLabel.getPreferredSize();
         JRadioButton refRadion = new JRadioButton(NbBundle.getMessage(ProfilerCPUSettings.class, "LBL_Root_Classes")); // NOI18N
         refRadion.setBorder(rootClassesLabel.getBorder());
@@ -267,25 +231,25 @@ public abstract class ProfilerCPUPanel extends JPanel {
         constraints.gridwidth = GridBagConstraints.REMAINDER;
         constraints.anchor = GridBagConstraints.NORTHWEST;
         constraints.fill = GridBagConstraints.BOTH;
-        constraints.insets = new Insets(0, 10, 7, 10);
+        constraints.insets = new Insets(0, 10, 10, 10);
         add(rootsArea, constraints);
         
-        runnablesCheckBox = new JCheckBox() {
-            protected void fireActionPerformed(ActionEvent e) { syncUI(); }
-        };
-        setText(runnablesCheckBox, NbBundle.getMessage(ProfilerCPUSettings.class,
-                "LBL_Profile_Runnables"), mnemonics);
-        runnablesCheckBox.setToolTipText(NbBundle.getMessage(ProfilerCPUSettings.class, "TOOLTIP_New_Runnables")); // NOI18N
-        runnablesCheckBox.setOpaque(false);
-        runnablesCheckBox.setBorder(rootClassesLabel.getBorder());
-        constraints = new GridBagConstraints();
-        constraints.gridx = 0;
-        constraints.gridy = 3;
-        constraints.gridwidth = GridBagConstraints.REMAINDER;
-        constraints.anchor = GridBagConstraints.WEST;
-        constraints.fill = GridBagConstraints.NONE;
-        constraints.insets = new Insets(0, 10, 10, 10);
-        add(runnablesCheckBox, constraints);
+//        runnablesCheckBox = new JCheckBox() {
+//            protected void fireActionPerformed(ActionEvent e) { syncUI(); }
+//        };
+//        setText(runnablesCheckBox, NbBundle.getMessage(ProfilerCPUSettings.class,
+//                "LBL_Profile_Runnables"), mnemonics);
+//        runnablesCheckBox.setToolTipText(NbBundle.getMessage(ProfilerCPUSettings.class, "TOOLTIP_New_Runnables")); // NOI18N
+//        runnablesCheckBox.setOpaque(false);
+//        runnablesCheckBox.setBorder(rootClassesLabel.getBorder());
+//        constraints = new GridBagConstraints();
+//        constraints.gridx = 0;
+//        constraints.gridy = 3;
+//        constraints.gridwidth = GridBagConstraints.REMAINDER;
+//        constraints.anchor = GridBagConstraints.WEST;
+//        constraints.fill = GridBagConstraints.NONE;
+//        constraints.insets = new Insets(0, 10, 10, 10);
+//        add(runnablesCheckBox, constraints);
         
         inclFilterRadioButton = new JRadioButton() {
             protected void fireActionPerformed(ActionEvent e) { syncUI(); }
@@ -298,7 +262,7 @@ public abstract class ProfilerCPUPanel extends JPanel {
         filterRadiosGroup.add(inclFilterRadioButton);
         constraints = new GridBagConstraints();
         constraints.gridx = 0;
-        constraints.gridy = 4;
+        constraints.gridy = 3;
         constraints.gridwidth = 1;
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.NONE;
@@ -316,7 +280,7 @@ public abstract class ProfilerCPUPanel extends JPanel {
         filterRadiosGroup.add(exclFilterRadioButton);
         constraints = new GridBagConstraints();
         constraints.gridx = 1;
-        constraints.gridy = 4;
+        constraints.gridy = 3;
         constraints.gridwidth = 1;
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.NONE;
@@ -332,7 +296,7 @@ public abstract class ProfilerCPUPanel extends JPanel {
         });
         constraints = new GridBagConstraints();
         constraints.gridx = 0;
-        constraints.gridy = 5;
+        constraints.gridy = 4;
         constraints.weighty = 0.35;
         constraints.gridwidth = GridBagConstraints.REMAINDER;
         constraints.anchor = GridBagConstraints.NORTHWEST;

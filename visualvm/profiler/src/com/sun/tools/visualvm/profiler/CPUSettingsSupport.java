@@ -29,6 +29,7 @@ import com.sun.tools.visualvm.core.ui.components.DataViewComponent;
 import com.sun.tools.visualvm.core.ui.components.ScrollableContainer;
 import com.sun.tools.visualvm.profiling.presets.PresetSelector;
 import com.sun.tools.visualvm.profiling.presets.ProfilerCPUPanel;
+import com.sun.tools.visualvm.profiling.presets.ProfilerPreset;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import javax.swing.BorderFactory;
@@ -41,17 +42,22 @@ import org.openide.util.NbBundle;
  *
  * @author Jiri Sedlacek
  */
-public abstract class CPUSettingsSupport {
+public abstract class CPUSettingsSupport extends ProfilerSettingsSupport {
     
     private JPanel container;
     private ProfilerCPUPanel panel;
     private PresetSelector selector;
     
+    private DataViewComponent.DetailsView detailsView;
+    
     
     DataViewComponent.DetailsView getDetailsView() {
-        return new DataViewComponent.DetailsView(NbBundle.getMessage(
-                CPUSettingsSupport.class, "LBL_Cpu_settings"), null, 10, // NOI18N
-                new ScrollableContainer(getComponent()), null);
+        if (detailsView == null) {
+            detailsView = new DataViewComponent.DetailsView(NbBundle.getMessage(
+                          CPUSettingsSupport.class, "LBL_Cpu_settings"), null, 10, // NOI18N
+                          new ScrollableContainer(getComponent()), null);
+        }
+        return detailsView;
     }
     
     public JComponent getComponent() {
@@ -60,20 +66,24 @@ public abstract class CPUSettingsSupport {
     }
     
     
-    ProfilingSettings getSettings() { return panel.getSettings(); }
+    public ProfilingSettings getSettings() { return panel.getSettings(); }
     
     void saveSettings() {
         // NOTE: might save custom configuration here
     }
     
-    void copySettings(CPUSettingsSupport settings) {
-        getComponent(); // initialize selector
-        selector.synchronizeWith(settings.selector);
+    void updateSettings(ProfilerPreset preset) {
+        panel.loadFromPreset(preset);
     }
     
     public abstract boolean presetValid();
     
     public boolean settingsValid() { return panel.settingsValid(); }
+    
+    public void showSettings(DataViewComponent dvc) {
+        panel.highlighInvalid();
+        dvc.selectDetailsView(getDetailsView());
+    }
     
     public abstract PresetSelector createSelector(Runnable presetSynchronizer);
     
